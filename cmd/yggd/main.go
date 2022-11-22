@@ -7,7 +7,6 @@ import (
 
 	"tailscale.com/client/tailscale"
 
-	"github.com/haleyrc/ygg/ack"
 	"github.com/haleyrc/ygg/server"
 	"github.com/haleyrc/ygg/share"
 )
@@ -33,9 +32,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	srv.API().Mount("/ack", ack.NewAPI())
-	srv.Sites().Mount("/ack", ack.NewSite())
 
 	srv.Sites().Mount("/share", share.NewSite())
 
