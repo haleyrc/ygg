@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	"tailscale.com/client/tailscale"
+
+	"github.com/haleyrc/ygg/ack"
+	"github.com/haleyrc/ygg/server"
+	"github.com/haleyrc/ygg/share"
 )
 
 const DEFAULT_PORT = 8080
@@ -26,16 +29,21 @@ func main() {
 	iface := status.TailscaleIPs[0]
 	fmt.Printf("Tailscale is up on: %s\n", iface)
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		fmt.Printf("--> %s\n", r.RemoteAddr)
-		fmt.Fprintln(w, "Hello!")
-		fmt.Printf("<-- %s\n", time.Since(start))
-	})
+	srv, err := server.New(ctx, iface.String(), DEFAULT_PORT)
+	if err != nil {
+		panic(err)
+	}
+
+	srv.API().Mount("/ack", ack.NewAPI())
+	srv.Sites().Mount("/ack", ack.NewSite())
+
+	srv.Sites().Mount("/share", share.NewSite())
+
+	srv.Routes()
 
 	ip := fmt.Sprintf("%s:%d", iface.String(), DEFAULT_PORT)
 	fmt.Printf("Listening on http://%s...\n", ip)
-	if err := http.ListenAndServe(ip, nil); err != nil {
+	if err := http.ListenAndServe(ip, srv); err != nil {
 		panic(err)
 	}
 }
