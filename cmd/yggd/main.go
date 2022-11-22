@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	"tailscale.com/client/tailscale"
 
@@ -16,30 +15,37 @@ const DEFAULT_PORT = 8080
 func main() {
 	ctx := context.Background()
 
-	status, err := tailscale.Status(ctx)
+	iface, err := getTailscaleInterface()
 	if err != nil {
 		panic(err)
+	}
+	fmt.Println("Tailscale is up on:", iface)
+
+	srv, err := server.New(ctx, iface, DEFAULT_PORT)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Listening on:", srv.URL())
+	fmt.Printf("Visit: %s/public/\n", srv.URL())
+
+	srv.Sites().Mount("/share", share.NewSite())
+	srv.Routes()
+
+	if err := srv.Listen(); err != nil {
+		panic(err)
+	}
+}
+
+func getTailscaleInterface() (string, error) {
+	status, err := tailscale.Status(context.Background())
+	if err != nil {
+		return "", nil
 	}
 
 	if len(status.TailscaleIPs) == 0 {
-		panic("No Tailscale IPs found!")
+		return "", fmt.Errorf("no tailscale ips found")
 	}
 
 	iface := status.TailscaleIPs[0]
-	fmt.Printf("Tailscale is up on: %s\n", iface)
-
-	srv, err := server.New(ctx, iface.String(), DEFAULT_PORT)
-	if err != nil {
-		panic(err)
-	}
-
-	srv.Sites().Mount("/share", share.NewSite())
-
-	srv.Routes()
-
-	ip := fmt.Sprintf("%s:%d", iface.String(), DEFAULT_PORT)
-	fmt.Printf("Listening on http://%s...\n", ip)
-	if err := http.ListenAndServe(ip, srv); err != nil {
-		panic(err)
-	}
+	return iface.String(), nil
 }
