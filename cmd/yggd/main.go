@@ -3,9 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 
+	"github.com/gorilla/mux"
 	"tailscale.com/client/tailscale"
 
+	"github.com/haleyrc/ygg/cloudflare/r2"
 	"github.com/haleyrc/ygg/server"
 	"github.com/haleyrc/ygg/share"
 )
@@ -15,37 +18,46 @@ const DEFAULT_PORT = 8080
 func main() {
 	ctx := context.Background()
 
-	iface, err := getTailscaleInterface()
-	if err != nil {
-		panic(err)
-	}
+	iface := mustGetTailscaleInterface()
 	fmt.Println("Tailscale is up on:", iface)
 
-	srv, err := server.New(ctx, iface, DEFAULT_PORT)
+	router := mux.NewRouter().StrictSlash(true)
+	public := router.PathPrefix("/public").Subrouter()
+
+	r2Client := r2.Must(r2.New(ctx, r2.Credentials{
+		AccountID:       os.Getenv("CLOUDFLARE_ACCOUNT_ID"),
+		AccessKeyID:     os.Getenv("CLOUDFLARE_ACCESS_KEY_ID"),
+		AccessKeySecret: os.Getenv("CLOUDFLARE_ACCESS_KEY_SECRET"),
+	}))
+
+	shareController, err := share.NewController(r2Client)
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println("Listening on:", srv.URL())
-	fmt.Printf("Visit: %s/public/\n", srv.URL())
+	public.HandleFunc("/share", shareController.Index).Methods("GET")
+	public.HandleFunc("/share", shareController.Create).Methods("POST")
 
-	srv.Sites().Mount("/share", share.NewSite())
-	srv.Routes()
+	srv, err := server.New(ctx, iface, DEFAULT_PORT, router)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("Listening on:", srv.Addr())
 
-	if err := srv.Listen(); err != nil {
+	if err := srv.ListenAndServe(); err != nil {
 		panic(err)
 	}
 }
 
-func getTailscaleInterface() (string, error) {
+func mustGetTailscaleInterface() string {
 	status, err := tailscale.Status(context.Background())
 	if err != nil {
-		return "", nil
+		panic(err)
 	}
 
 	if len(status.TailscaleIPs) == 0 {
-		return "", fmt.Errorf("no tailscale ips found")
+		panic("no tailscale ips found")
 	}
 
 	iface := status.TailscaleIPs[0]
-	return iface.String(), nil
+	return iface.String()
 }

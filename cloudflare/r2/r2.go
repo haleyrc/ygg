@@ -19,8 +19,11 @@ type Credentials struct {
 	AccessKeySecret string
 }
 
-type Client struct {
-	s3Client *s3.Client
+func Must(c *Client, err error) *Client {
+	if err != nil {
+		panic(err)
+	}
+	return c
 }
 
 func New(ctx context.Context, creds Credentials) (*Client, error) {
@@ -44,6 +47,10 @@ func New(ctx context.Context, creds Credentials) (*Client, error) {
 	}
 
 	return client, nil
+}
+
+type Client struct {
+	s3Client *s3.Client
 }
 
 func (c *Client) PresignGetFile(ctx context.Context, bucket, key string) (string, error) {
