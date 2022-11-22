@@ -25,21 +25,30 @@ type Client struct {
 
 func New(ctx context.Context, creds Credentials) (*Client, error) {
 	resolver := makeEndpointResolver(creds.AccountID)
+	credsProvider := makeCredentialsProvider(
+		creds.AccessKeyID,
+		creds.AccessKeySecret,
+	)
 
 	cfg, err := config.LoadDefaultConfig(
 		ctx,
 		config.WithEndpointResolverWithOptions(resolver),
-		config.WithCredentialsProvider(makeCredentialsProvider(creds.AccessKeyID, creds.AccessKeySecret)),
+		config.WithCredentialsProvider(credsProvider),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load config: %w", err)
 	}
 
-	return &Client{s3Client: s3.NewFromConfig(cfg)}, nil
+	client := &Client{
+		s3Client: s3.NewFromConfig(cfg),
+	}
+
+	return client, nil
 }
 
 func (c *Client) PresignGetFile(ctx context.Context, bucket, key string) (string, error) {
 	client := s3.NewPresignClient(c.s3Client)
+
 	result, err := client.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucket),
 		Key:    aws.String(key),
@@ -47,6 +56,7 @@ func (c *Client) PresignGetFile(ctx context.Context, bucket, key string) (string
 	if err != nil {
 		return "", fmt.Errorf("presign get file failed: %w", err)
 	}
+
 	return result.URL, nil
 }
 
@@ -56,22 +66,27 @@ func (c *Client) PutFile(ctx context.Context, bucket, key string, r io.Reader) e
 		return fmt.Errorf("put file failed: %w", err)
 	}
 
+	contentType := http.DetectContentType(fileBytes)
+
 	_, err = c.s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket:      aws.String(bucket),
 		Key:         aws.String(key),
 		Body:        bytes.NewReader(fileBytes),
-		ContentType: aws.String(http.DetectContentType(fileBytes)),
+		ContentType: aws.String(contentType),
 	})
 	if err != nil {
 		return fmt.Errorf("put file failed: %w", err)
 	}
+
 	return nil
 }
 
 func makeEndpointResolver(accountID string) aws.EndpointResolverWithOptions {
 	optionsFunc := func(service, region string, options ...interface{}) (aws.Endpoint, error) {
-		url := fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID)
-		return aws.Endpoint{URL: url}, nil
+		endpoint := aws.Endpoint{
+			URL: fmt.Sprintf("https://%s.r2.cloudflarestorage.com", accountID),
+		}
+		return endpoint, nil
 	}
 	return aws.EndpointResolverWithOptionsFunc(optionsFunc)
 }
@@ -79,17 +94,3 @@ func makeEndpointResolver(accountID string) aws.EndpointResolverWithOptions {
 func makeCredentialsProvider(accessKeyID, accessKeySecret string) aws.CredentialsProvider {
 	return credentials.NewStaticCredentialsProvider(accessKeyID, accessKeySecret, "")
 }
-
-/*
-	listObjectsOutput, err := client.ListObjectsV2(context.TODO(), &s3.ListObjectsV2Input{
-		Bucket: &bucketName,
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for _, object := range listObjectsOutput.Contents {
-		obj, _ := json.MarshalIndent(object, "", "\t")
-		fmt.Println(string(obj))
-	}
-*/
